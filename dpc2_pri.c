@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "inc/prefetcher.h"
+#include "../inc/prefetcher.h"
 
 
 // *********************************************************************************************
@@ -131,6 +131,10 @@ void SEQT(unsigned long long int addr, unsigned long long int ip, int cache_hit)
 	static int numl2occhigh = 0;
 	unsigned long long int cycle = get_current_cycle(0); 
 	int m;
+	double tblks_hitrate; 
+	double oblks_hitrate;
+	int pf_off = 0;
+	int failedtest;	
 
 	suml2occ +=  get_l2_mshr_occupancy(0);
   
@@ -151,99 +155,87 @@ void SEQT(unsigned long long int addr, unsigned long long int ip, int cache_hit)
 		}
 	}
   
-	if((l2acc%INTERVAL)==0){
+	if((l2acc%INTERVAL)==0) {
 	//decide on distance
-
-	
 	if(tqhits < 16) {
 		if(pfcut > 1) {
 			dist_ptr = 0;
 			pfcut2 = 0;
-	  }
-else {
-	if(dist_ptr > -1)
-	dist_ptr--;
-	}
-
-	  if((l2miss-tqmhits)>DIFFLIMIT)
-	pfcut2++;
-	  else
-	pfcut2 = 0;
-
-	  high = 0;
-	  low = 0;
-	  low2 = 0;
-	  pfcut++;
-	}
-	else{
-	  pfcut = 0;
-
-	  if(l2miss < 10){
-	pfcut2 = 0;
-	  }
-	  else if((l2miss-tqmhits)>DIFFLIMIT){
-
-	low2 = 0;
-
-	if(pfcut2 > 1){
-	  dist_ptr = 0;
-	  pfcut2 = 0;
-	}
-	else{
-	  pfcut2++;
-
-	  if(dist_ptr == 0){
-		if(pf_turn_on > 1){
-		  pf_turn_on = 0;
-		  dist_ptr = 1;
 		}
+		else {
+			if(dist_ptr > -1)
+				dist_ptr--;
+		}
+
+		if((l2miss-tqmhits)>DIFFLIMIT)
+			pfcut2++;
 		else
-		  pf_turn_on++;
-	  }
+			pfcut2 = 0;
 
+		high = 0;
+		low = 0;
+		low2 = 0;
+		pfcut++;
 	}
-	high = 0;
-	low = 0;
-	  }
-	  else if((l2miss!=0) && (tqmhits !=0)){
-	if((l2miss/tqmhits < 2)){
-	  
-	  if(low2>=2){
-		if(dist_ptr<MAXDISTANCE){
-		  dist_ptr++;
-		  low2 = 0;
+	else {
+		pfcut = 0;
+
+		if(l2miss < 10) {
+			pfcut2 = 0;
 		}
-	  }
-	  else{
-		low2++;
-	  }
-	}
-	else
-	  low2 = 0;
-
-	high = 0;
-	low = 0;
-	pfcut2 = 0;
+		else if((l2miss-tqmhits)>DIFFLIMIT) {
+			low2 = 0;
+			if(pfcut2 > 1){
+				dist_ptr = 0;
+				pfcut2 = 0;
+			}
+			else {
+				pfcut2++;
+				if(dist_ptr == 0){
+					if(pf_turn_on > 1) {
+						pf_turn_on = 0;
+						dist_ptr = 1;
+					}
+					else
+						pf_turn_on++;
+				}
+			}
+			high = 0;
+			low = 0;
+		}
+		else if((l2miss!=0) && (tqmhits !=0)) {
+			if((l2miss/tqmhits < 2)){
+				if (low2>=2) {
+					if (dist_ptr < MAXDISTANCE) {
+						dist_ptr++;
+						low2 = 0;
+					}
+				}
+				else
+					low2++;
+			}
+			else
+				low2 = 0;
+			high = 0;
+			low = 0;
+			pfcut2 = 0;
 	
-	
-	if(dist_ptr == 0){
-	  if(pf_turn_on > 1){
-		pf_turn_on = 0;
-		dist_ptr = 1;
-	  }
-	  else
-		pf_turn_on++;
+			if(dist_ptr == 0) {
+				if(pf_turn_on > 1) {
+					pf_turn_on = 0;
+					dist_ptr = 1;
+				}
+				else
+					pf_turn_on++;
+			}
+		}
+		else {
+			pfcut2 = 0;
+			high = 0;
+			low = 0;
+			low2 = 0;
+		}
 	}
-	  }
-	  else{
-	pfcut2 = 0;
-	high = 0;
-	low = 0;
-	low2 = 0;
-
-	  }
-	}
-
 	distance = dist[dist_ptr];
 
 	//reset table
@@ -254,64 +246,46 @@ else {
 	sumdiff = 0;
 	tqhits = 0;
 	l2miss = 0;
-
-
 	suml2occ = 0;
 	numl2occhigh = 0;
-
+	
 	//testing related
-	if(testing == 1){
+	if(testing == 1) {
+		tblks_hitrate = (double)testblks_hits/(double)testblks;
+		oblks_hitrate = (double)otherblks_hits/(double)otherblks;
 
-	  double tblks_hitrate = (double)testblks_hits/(double)testblks;
-	  double oblks_hitrate = (double)otherblks_hits/(double)otherblks;
-
-	  int pf_off = 0;
-
-	  if(knob_low_bandwidth){
-	//turn off prefetching if really not worth it
-	pf_off = ((double)oblks_hitrate < (1.2*(double)tblks_hitrate));
-
-	if(pf_off == 0)
-	  pf_off = (otherblks_hits < 16);
-	  }
-	  else{
-	// give advantage to prefetching
-	pf_off = (((double)tblks_hitrate/(double)oblks_hitrate) > 1.2);
-
-	if(pf_off == 0)
-	  pf_off = (otherblks_hits < 8);
-
-	  }
-
-	  int failedtest = ((testblks < 32) || (otherblks < 32));	
-
-
-	  if(!failedtest){
-	if(pf_off){
-
-	  distance = 0;
-	  if(testperiod > INTERVAL)
-		testperiod = testperiod>>1;
-	  
-	  //update turning off counter
-	  if(cntoff < 3)
-		cntoff++;
-	  
-	  cnton = 0;
-	  
+		if(knob_low_bandwidth){
+			//turn off prefetching if really not worth it
+			pf_off = ((double)oblks_hitrate < (1.2*(double)tblks_hitrate));
+			if(pf_off == 0)
+				pf_off = (otherblks_hits < 16);
+		}
+	else {
+		// give advantage to prefetching
+		pf_off = (((double)tblks_hitrate/(double)oblks_hitrate) > 1.2);
+		if(pf_off == 0)
+			pf_off = (otherblks_hits < 8);
 	}
-	else{
-	  if(testperiod < (32*INTERVAL))
-		testperiod = testperiod*2;
-	  
-	  //update turning off counter
-	  cntoff = 0;
-	  
-	  if(cnton < 3)
-		cnton++;
-
+	failedtest = ((testblks < 32) || (otherblks < 32));	
+	if(!failedtest) {
+		if(pf_off) {
+			distance = 0;
+			if(testperiod > INTERVAL)
+				testperiod = testperiod>>1;
+			//update turning off counter
+			if(cntoff < 3)
+				cntoff++;
+			cnton = 0;
+		}
+		else {
+			if(testperiod < (32*INTERVAL))
+				testperiod = testperiod*2;
+				//update turning off counter
+				cntoff = 0;
+			if(cnton < 3)
+				cnton++;
+		}
 	}
-	  }
 	  else{
 	//failed test, try again next interval
 	testperiod = INTERVAL;
